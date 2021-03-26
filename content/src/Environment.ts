@@ -151,7 +151,8 @@ export enum EnvironmentConfig {
   SNAPSHOT_FREQUENCY,
   CUSTOM_DAO,
   DISABLE_SYNCHRONIZATION,
-  DISABLE_DENYLIST
+  DISABLE_DENYLIST,
+  CONTENT_SERVER_ADDRESS
 }
 
 export class EnvironmentBuilder {
@@ -317,7 +318,13 @@ export class EnvironmentBuilder {
     this.registerConfigIfNotAlreadySet(
       env,
       EnvironmentConfig.DISABLE_DENYLIST,
-      () => process.env.DISABLE_DENYLIST === 'true'
+      () => process.env.DISABLE_DENYLIST !== 'false'
+    )
+
+    this.registerConfigIfNotAlreadySet(
+      env,
+      EnvironmentConfig.CONTENT_SERVER_ADDRESS,
+      () => process.env.CONTENT_SERVER_ADDRESS
     )
 
     // Please put special attention on the bean registration order.
