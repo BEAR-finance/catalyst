@@ -14,14 +14,13 @@ import {
   MetaverseContentService
 } from '@katalyst/content/service/Service'
 import { ContentItem, SimpleContentItem } from '@katalyst/content/storage/ContentStorage'
-import { Repository, RepositoryTask } from '@katalyst/content/storage/Repository'
+import { Database } from '@katalyst/content/storage/Database'
 import {
   AuditInfo,
   ContentFileHash,
   EntityId,
   EntityType,
   LegacyAuditInfo,
-  LegacyPartialDeploymentHistory,
   PartialDeploymentHistory,
   Pointer,
   ServerStatus,
@@ -75,7 +74,8 @@ export class MockedMetaverseContentService implements MetaverseContentService {
     filters?: PointerChangesFilters,
     offset?: number,
     limit?: number,
-    repository?: RepositoryTask | Repository
+    lastId?: string,
+    task?: Database
   ) {
     return Promise.resolve({
       pointerChanges: this.pointerChanges,
@@ -116,7 +116,7 @@ export class MockedMetaverseContentService implements MetaverseContentService {
     files: ContentFile[],
     entityId: string,
     auditInfo: LocalDeploymentAuditInfo,
-    repository?: RepositoryTask | Repository
+    task?: Database
   ): Promise<number> {
     throw new Error('Method not implemented.')
   }
@@ -144,16 +144,6 @@ export class MockedMetaverseContentService implements MetaverseContentService {
 
   getStatus(): ServerStatus {
     return MockedMetaverseContentService.STATUS
-  }
-
-  getLegacyHistory(
-    from?: number,
-    to?: number,
-    serverName?: string,
-    offset?: number,
-    limit?: number
-  ): Promise<LegacyPartialDeploymentHistory> {
-    throw new Error('Method not implemented.')
   }
 
   getAllFailedDeployments(): Promise<FailedDeployment[]> {
