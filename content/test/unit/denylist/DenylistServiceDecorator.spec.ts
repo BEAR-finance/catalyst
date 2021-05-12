@@ -14,13 +14,13 @@ import { Deployment } from '@katalyst/content/service/deployments/DeploymentMana
 import { Entity } from '@katalyst/content/service/Entity'
 import { LocalDeploymentAuditInfo } from '@katalyst/content/service/Service'
 import { assertPromiseRejectionIs } from '@katalyst/test-helpers/PromiseAssertions'
+import { MockedRepository } from '@katalyst/test-helpers/repository/MockedRepository'
 import {
   buildContent as buildRandomContent,
   buildEntity,
   MockedMetaverseContentService,
   MockedMetaverseContentServiceBuilder
 } from '@katalyst/test-helpers/service/MockedMetaverseContentService'
-import { MockedRepository } from '@katalyst/test-helpers/storage/MockedRepository'
 import { EntityVersion, Pointer } from 'dcl-catalyst-commons'
 import { Authenticator } from 'dcl-crypto'
 import { random } from 'faker'
@@ -76,6 +76,68 @@ describe('DenylistServiceDecorator', () => {
     const [deployment1] = deployments
 
     expect(deployment1.auditInfo).toEqual(MockedMetaverseContentService.AUDIT_INFO)
+  })
+
+  it(`When a pointer is denylisted, then no entities are reported on it`, async () => {
+    const denylist = denylistWith(P1Target)
+    const decorator = getDecorator(denylist)
+
+    const entities = await decorator.getEntitiesByPointers(entity1.type, [P1])
+
+    expect(entities.length).toBe(0)
+  })
+
+  it(`When a pointer is not denylisted, then it reports the entity correctly`, async () => {
+    const denylist = denylistWith(P1Target)
+    const decorator = getDecorator(denylist)
+
+    const entities = await decorator.getEntitiesByPointers(entity2.type, entity2.pointers)
+
+    expect(entities).toEqual([entity2])
+  })
+
+  it(`When an entity is denylisted, then it is returned by pointers, but without content or metadata`, async () => {
+    const denylist = denylistWith(entity2Target)
+    const decorator = getDecorator(denylist)
+
+    const entities = await decorator.getEntitiesByPointers(entity2.type, entity2.pointers)
+
+    expect(entities.length).toBe(1)
+    const returnedEntity = entities[0]
+    entitiesEqualNonSanitizableProperties(returnedEntity, entity2)
+    expect(returnedEntity.metadata).toEqual(DenylistServiceDecorator.DENYLISTED_METADATA)
+    expect(returnedEntity.content).toBeUndefined()
+  })
+
+  it(`When an entity is not denylisted, then it is returned by pointers correctly`, async () => {
+    const denylist = denylistWith(entity2Target)
+    const decorator = getDecorator(denylist)
+
+    const entities = await decorator.getEntitiesByPointers(entity1.type, entity1.pointers)
+
+    expect(entities).toEqual([entity1])
+  })
+
+  it(`When an entity is denylisted, then it is returned by id, but without content or metadata`, async () => {
+    const denylist = denylistWith(entity2Target)
+    const decorator = getDecorator(denylist)
+
+    const entities = await decorator.getEntitiesByIds([entity2.id])
+
+    expect(entities.length).toBe(1)
+    const returnedEntity = entities[0]
+    entitiesEqualNonSanitizableProperties(returnedEntity, entity2)
+    expect(returnedEntity.metadata).toEqual(DenylistServiceDecorator.DENYLISTED_METADATA)
+    expect(returnedEntity.content).toBeUndefined()
+  })
+
+  it(`When an entity is not denylisted, then it is returned by id correctly`, async () => {
+    const denylist = denylistWith(entity2Target)
+    const decorator = getDecorator(denylist)
+
+    const entities = await decorator.getEntitiesByIds([entity1.id])
+
+    expect(entities).toEqual([entity1])
   })
 
   it(`When an entity is denylisted, then it is returned on deployments, but without content or metadata`, async () => {
@@ -259,6 +321,13 @@ describe('DenylistServiceDecorator', () => {
     expect(entity.type).toEqual(deployment.entityType)
     expect(entity.pointers).toEqual(deployment.pointers)
     expect(entity.timestamp).toEqual(deployment.entityTimestamp)
+  }
+
+  function entitiesEqualNonSanitizableProperties(entity1: Entity, entity2: Entity) {
+    expect(entity1.id).toEqual(entity2.id)
+    expect(entity1.type).toEqual(entity2.type)
+    expect(entity1.pointers).toEqual(entity2.pointers)
+    expect(entity1.timestamp).toEqual(entity2.timestamp)
   }
 
   function deploymentEquals(entity: Entity, deployment: Deployment) {

@@ -7,19 +7,19 @@ import {
   Hashing,
   PartialDeploymentHistory,
   Pointer,
-  ServerAddress,
   ServerName,
-  ServerStatus,
-  Timestamp
+  ServerStatus
 } from 'dcl-catalyst-commons'
 import log4js from 'log4js'
+import { TOTAL_AMOUNT_OF_DEPLOYMENTS } from '../ContentMetrics'
 import { ContentFile } from '../controller/Controller'
 import { CURRENT_CONTENT_VERSION } from '../Environment'
+import { Database } from '../repository/Database'
+import { Repository } from '../repository/Repository'
+import { DB_REQUEST_PRIORITY } from '../repository/RepositoryQueue'
 import { ContentItem, fromBuffer, StorageContent } from '../storage/ContentStorage'
-import { Database } from '../storage/Database'
-import { Repository } from '../storage/Repository'
-import { DB_REQUEST_PRIORITY } from '../storage/RepositoryQueue'
 import { ContentAuthenticator } from './auth/Authenticator'
+import { CacheByType } from './caching/Cache'
 import {
   Deployment,
   DeploymentManager,
@@ -59,13 +59,18 @@ export class ServiceImpl implements MetaverseContentService, ClusterDeploymentsS
     private readonly failedDeploymentsManager: FailedDeploymentsManager,
     private readonly deploymentManager: DeploymentManager,
     private readonly validations: Validations,
-    private readonly repository: Repository
+    private readonly repository: Repository,
+    private readonly cache: CacheByType<Pointer, Entity>
   ) {}
 
   async start(): Promise<void> {
-    this.historySize = await this.repository.task((task) => task.deployments.getAmountOfDeployments(), {
+    const amountOfDeployments = await this.repository.task((task) => task.deployments.getAmountOfDeployments(), {
       priority: DB_REQUEST_PRIORITY.HIGH
     })
+    for (const [entityType, amount] of amountOfDeployments) {
+      this.historySize += amount
+      TOTAL_AMOUNT_OF_DEPLOYMENTS.inc({ entity_type: entityType }, amount)
+    }
   }
 
   deployEntity(
@@ -165,7 +170,7 @@ export class ServiceImpl implements MetaverseContentService, ClusterDeploymentsS
 
     try {
       const response:
-        | { auditInfoComplete: AuditInfo; wasEntityDeployed: boolean }
+        | { auditInfoComplete: AuditInfo; wasEntityDeployed: boolean; affectedPointers: Pointer[] | undefined }
         | InvalidResult = await this.repository.reuseIfPresent(
         task,
         (db) =>
@@ -208,6 +213,8 @@ export class ServiceImpl implements MetaverseContentService, ClusterDeploymentsS
               localTimestamp
             }
 
+            let affectedPointers: Pointer[] | undefined
+
             if (!isEntityAlreadyDeployed) {
               // IF THIS POINT WAS REACHED, THEN THE DEPLOYMENT WILL BE COMMITTED
 
@@ -233,6 +240,7 @@ export class ServiceImpl implements MetaverseContentService, ClusterDeploymentsS
                 deploymentId,
                 entity
               )
+              affectedPointers = Array.from(result.keys())
 
               // Save deployment pointer changes
               await this.deploymentManager.savePointerChanges(
@@ -258,7 +266,7 @@ export class ServiceImpl implements MetaverseContentService, ClusterDeploymentsS
               entity.id
             )
 
-            return { auditInfoComplete, wasEntityDeployed: !isEntityAlreadyDeployed }
+            return { auditInfoComplete, wasEntityDeployed: !isEntityAlreadyDeployed, affectedPointers }
           }),
         { priority: DB_REQUEST_PRIORITY.HIGH }
       )
@@ -273,6 +281,10 @@ export class ServiceImpl implements MetaverseContentService, ClusterDeploymentsS
 
         // Since we are still reporting the history size, add one to it
         this.historySize++
+        TOTAL_AMOUNT_OF_DEPLOYMENTS.inc({ entity_type: entity.type })
+
+        // Invalidate cache
+        response.affectedPointers?.forEach((pointer) => this.cache.invalidate(entity.type, pointer))
       }
       return response.auditInfoComplete.localTimestamp
     } catch (error) {
@@ -287,8 +299,6 @@ export class ServiceImpl implements MetaverseContentService, ClusterDeploymentsS
   reportErrorDuringSync(
     entityType: EntityType,
     entityId: EntityId,
-    originTimestamp: Timestamp,
-    originServerUrl: ServerAddress,
     reason: FailureReason,
     errorDescription?: string
   ): Promise<null> {
@@ -299,13 +309,45 @@ export class ServiceImpl implements MetaverseContentService, ClusterDeploymentsS
           db.failedDeployments,
           entityType,
           entityId,
-          originTimestamp,
-          originServerUrl,
           reason,
           errorDescription
         ),
       { priority: DB_REQUEST_PRIORITY.HIGH }
     )
+  }
+
+  async getEntitiesByIds(ids: EntityId[], task?: Database): Promise<Entity[]> {
+    const deployments = await this.getDeployments({ filters: { entityIds: ids } }, task)
+    return this.mapDeploymentsToEntities(deployments)
+  }
+
+  async getEntitiesByPointers(type: EntityType, pointers: Pointer[], task?: Database): Promise<Entity[]> {
+    const allEntities = await this.cache.get(type, pointers, async (type, pointers) => {
+      const deployments = await this.getDeployments(
+        { filters: { entityTypes: [type], pointers, onlyCurrentlyPointed: true } },
+        task
+      )
+      const entities = this.mapDeploymentsToEntities(deployments)
+      const entries: [Pointer, Entity][][] = entities.map((entity) =>
+        entity.pointers.map((pointer) => [pointer, entity])
+      )
+      return new Map(entries.flat())
+    })
+
+    // Since the same entity might appear many times, we must remove duplicates
+    const grouped = new Map(allEntities.map((entity) => [entity.id, entity]))
+    return Array.from(grouped.values())
+  }
+
+  private mapDeploymentsToEntities(history: PartialDeploymentHistory<Deployment>): Entity[] {
+    return history.deployments.map(({ entityId, entityType, pointers, entityTimestamp, content, metadata }) => ({
+      id: entityId,
+      type: entityType,
+      pointers,
+      timestamp: entityTimestamp,
+      content,
+      metadata
+    }))
   }
 
   /** Check if there are newer entities on the given entity's pointers */

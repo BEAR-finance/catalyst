@@ -57,7 +57,7 @@ export async function assertEntityWasNotDeployed(server: TestServer, entity: Con
 }
 
 export async function assertEntitiesAreActiveOnServer(server: TestServer, ...entities: ControllerEntity[]) {
-  // Legacy check
+  // Entities check
   for (const entity of entities) {
     const entitiesByPointer = await server.getEntitiesByPointers(entity.type, entity.pointers)
     assert.deepStrictEqual(entitiesByPointer, [entity])
@@ -127,17 +127,11 @@ export async function assertThereIsAFailedDeployment(server: TestServer): Promis
   return failedDeployments[0]
 }
 
-export async function assertDeploymentFailed(
-  server: TestServer,
-  reason: FailureReason,
-  entity: ControllerEntity,
-  originTimestamp: Timestamp
-) {
+export async function assertDeploymentFailed(server: TestServer, reason: FailureReason, entity: ControllerEntity) {
   const failedDeployment = await assertThereIsAFailedDeployment(server)
   assert.equal(failedDeployment.entityType, entity.type)
   assert.equal(failedDeployment.entityId, entity.id)
   assert.equal(failedDeployment.reason, reason)
-  assert.ok(failedDeployment.failureTimestamp > originTimestamp)
 }
 
 function assertEqualsDeployment(actualDeployment: ControllerDeployment, expectedDeployment: ControllerDeployment) {

@@ -1,14 +1,14 @@
 import pgPromise, { IBaseProtocol, IDatabase, IInitOptions, IMain } from 'pg-promise'
 import { retry } from '../helpers/RetryHelper'
-import { ContentFilesRepository } from './repositories/ContentFilesRepository'
-import { DenylistRepository } from './repositories/DenylistRepository'
-import { DeploymentPointerChangesRepository } from './repositories/DeploymentPointerChangesRepository'
-import { DeploymentsRepository } from './repositories/DeploymentsRepository'
-import { FailedDeploymentsRepository } from './repositories/FailedDeploymentsRepository'
-import { LastDeployedPointersRepository } from './repositories/LastDeployedPointersRepository'
-import { MigrationDataRepository } from './repositories/MigrationDataRepository'
-import { PointerHistoryRepository } from './repositories/PointerHistoryRepository'
-import { SystemPropertiesRepository } from './repositories/SystemPropertiesRepository'
+import { ContentFilesRepository } from './extensions/ContentFilesRepository'
+import { DenylistRepository } from './extensions/DenylistRepository'
+import { DeploymentPointerChangesRepository } from './extensions/DeploymentPointerChangesRepository'
+import { DeploymentsRepository } from './extensions/DeploymentsRepository'
+import { FailedDeploymentsRepository } from './extensions/FailedDeploymentsRepository'
+import { LastDeployedPointersRepository } from './extensions/LastDeployedPointersRepository'
+import { MigrationDataRepository } from './extensions/MigrationDataRepository'
+import { PointerHistoryRepository } from './extensions/PointerHistoryRepository'
+import { SystemPropertiesRepository } from './extensions/SystemPropertiesRepository'
 
 export type Database = IBaseProtocol<IExtensions> & IExtensions
 export type FullDatabase = IDatabase<IExtensions> & Database
@@ -25,43 +25,22 @@ export interface IExtensions {
   systemProperties: SystemPropertiesRepository
 }
 
-export type DBConnection = {
+type DBConnection = {
   host: string
   port: number
 }
 
-export type DBCredentials = {
+type DBCredentials = {
   database: string
   user: string
   password: string
 }
 
 /**
- * Builds the database client by connecting to the content database. If it isn't present, then it tries to connect with the root user and creates the content database and user.
+ * Builds the database client by connecting to the content database
  */
-export async function build(
-  connection: DBConnection,
-  contentCredentials: DBCredentials,
-  rootCredentials?: DBCredentials
-): Promise<FullDatabase> {
-  try {
-    return await connectTo(connection, contentCredentials)
-  } catch (error) {
-    if (rootCredentials) {
-      console.log('Trying to create database...')
-      // Probably the content database doesn't exist. So we try to create it
-      const rootRepo = await connectTo(connection, rootCredentials)
-      await rootRepo.query(`CREATE USER ${contentCredentials.user} WITH PASSWORD $1`, [contentCredentials.password])
-      await rootRepo.query(`CREATE DATABASE ${contentCredentials.database}`)
-      await rootRepo.query(
-        `GRANT ALL PRIVILEGES ON DATABASE ${contentCredentials.database} TO ${contentCredentials.user}`
-      )
-
-      return connectTo(connection, contentCredentials)
-    } else {
-      throw error
-    }
-  }
+export function build(connection: DBConnection, contentCredentials: DBCredentials): Promise<FullDatabase> {
+  return connectTo(connection, contentCredentials)
 }
 
 async function connectTo(connection: DBConnection, credentials: DBCredentials) {

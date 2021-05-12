@@ -1,8 +1,8 @@
+import { ContentFilesRepository } from '@katalyst/content/repository/extensions/ContentFilesRepository'
+import { DeploymentPointerChangesRepository } from '@katalyst/content/repository/extensions/DeploymentPointerChangesRepository'
+import { DeploymentId, DeploymentsRepository } from '@katalyst/content/repository/extensions/DeploymentsRepository'
+import { MigrationDataRepository } from '@katalyst/content/repository/extensions/MigrationDataRepository'
 import { Entity } from '@katalyst/content/service/Entity'
-import { ContentFilesRepository } from '@katalyst/content/storage/repositories/ContentFilesRepository'
-import { DeploymentPointerChangesRepository } from '@katalyst/content/storage/repositories/DeploymentPointerChangesRepository'
-import { DeploymentId, DeploymentsRepository } from '@katalyst/content/storage/repositories/DeploymentsRepository'
-import { MigrationDataRepository } from '@katalyst/content/storage/repositories/MigrationDataRepository'
 import {
   AuditInfo,
   ContentFileHash,
@@ -66,8 +66,6 @@ export class DeploymentManager {
       auditInfo: {
         version: result.version,
         authChain: result.authChain,
-        originServerUrl: result.originServerUrl,
-        originTimestamp: result.originTimestamp,
         localTimestamp: result.localTimestamp,
         overwrittenBy: result.overwrittenBy,
         migrationData: migrationData.get(result.deploymentId)

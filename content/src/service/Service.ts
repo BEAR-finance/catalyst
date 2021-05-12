@@ -4,13 +4,13 @@ import {
   EntityId,
   EntityType,
   PartialDeploymentHistory,
-  ServerAddress,
+  Pointer,
   ServerStatus,
   Timestamp
 } from 'dcl-catalyst-commons'
 import { ContentFile } from '../controller/Controller'
+import { Database } from '../repository/Database'
 import { ContentItem } from '../storage/ContentStorage'
-import { Database } from '../storage/Database'
 import {
   Deployment,
   DeploymentOptions,
@@ -60,6 +60,8 @@ export interface MetaverseContentService {
     lastId?: string,
     task?: Database
   ): Promise<PartialDeploymentPointerChanges>
+  getEntitiesByIds(ids: EntityId[], task?: Database): Promise<Entity[]>
+  getEntitiesByPointers(type: EntityType, pointers: Pointer[], task?: Database): Promise<Entity[]>
   listenToDeployments(listener: DeploymentListener): void
 }
 
@@ -71,8 +73,6 @@ export interface ClusterDeploymentsService {
   reportErrorDuringSync(
     entityType: EntityType,
     entityId: EntityId,
-    originTimestamp: Timestamp,
-    originServerUrl: ServerAddress,
     reason: FailureReason,
     errorDescription?: string
   ): Promise<null>

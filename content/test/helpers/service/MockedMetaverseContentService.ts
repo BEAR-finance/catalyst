@@ -1,5 +1,6 @@
 import { ContentFile } from '@katalyst/content/controller/Controller'
 import { CURRENT_CONTENT_VERSION } from '@katalyst/content/Environment'
+import { Database } from '@katalyst/content/repository/Database'
 import {
   Deployment,
   DeploymentOptions,
@@ -14,7 +15,6 @@ import {
   MetaverseContentService
 } from '@katalyst/content/service/Service'
 import { ContentItem, SimpleContentItem } from '@katalyst/content/storage/ContentStorage'
-import { Database } from '@katalyst/content/storage/Database'
 import {
   AuditInfo,
   ContentFileHash,
@@ -155,6 +155,18 @@ export class MockedMetaverseContentService implements MetaverseContentService {
   }
   listenToDeployments(listener: DeploymentListener): void {
     throw new Error('Method not implemented.')
+  }
+
+  getEntitiesByIds(ids: string[]): Promise<Entity[]> {
+    return Promise.resolve(this.entities.filter(({ id }) => ids.includes(id)))
+  }
+
+  getEntitiesByPointers(type: EntityType, pointers: string[]): Promise<Entity[]> {
+    return Promise.resolve(
+      this.entities.filter(
+        (entity) => entity.type === type && entity.pointers.some((pointer) => pointers.includes(pointer))
+      )
+    )
   }
 
   private entityToDeployment(entity: Entity): Deployment {

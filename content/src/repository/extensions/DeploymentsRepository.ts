@@ -1,5 +1,5 @@
+import { Database } from '@katalyst/content/repository/Database'
 import { Entity } from '@katalyst/content/service/Entity'
-import { Database } from '@katalyst/content/storage/Database'
 import {
   AuditInfo,
   DeploymentFilters,
@@ -25,12 +25,21 @@ export class DeploymentsRepository {
       [entityIds],
       ({ entity_id }) => entity_id
     )
+
     const deployedIds = new Set(result)
     return new Map(entityIds.map((entityId) => [entityId, deployedIds.has(entityId)]))
   }
 
-  getAmountOfDeployments(): Promise<number> {
-    return this.db.one(`SELECT COUNT(*) AS count FROM deployments`, [], (row) => parseInt(row.count))
+  async getAmountOfDeployments(): Promise<Map<EntityType, number>> {
+    const entries: [
+      EntityType,
+      number
+    ][] = await this.db.map(
+      `SELECT entity_type, COUNT(*) AS count FROM deployments GROUP BY entity_type`,
+      [],
+      (row) => [row.entity_type, parseInt(row.count)]
+    )
+    return new Map(entries)
   }
 
   getHistoricalDeployments(
@@ -41,7 +50,7 @@ export class DeploymentsRepository {
     lastId?: string
   ) {
     const sorting = Object.assign({ field: SortingField.LOCAL_TIMESTAMP, order: SortingOrder.DESCENDING }, sortBy)
-    return this.getDeploymentsBy(sorting?.field, sorting?.order, offset, limit, filters, lastId)
+    return this.getDeploymentsBy(sorting.field, sorting.order, offset, limit, filters, lastId)
   }
 
   private getDeploymentsBy(
@@ -63,8 +72,6 @@ export class DeploymentsRepository {
                 dep1.deployer_address,
                 dep1.version,
                 dep1.auth_chain,
-                dep1.origin_server_url,
-                date_part('epoch', dep1.origin_timestamp) * 1000 AS origin_timestamp,
                 date_part('epoch', dep1.local_timestamp) * 1000 AS local_timestamp,
                 dep2.entity_id AS overwritten_by
             FROM deployments AS dep1
@@ -124,8 +131,8 @@ export class DeploymentsRepository {
     }
 
     if (filters?.deployedBy && filters.deployedBy.length > 0) {
-      values.deployedBy = filters.deployedBy
-      whereClause.push(`dep1.deployer_address IN ($(deployedBy:list))`)
+      values.deployedBy = filters.deployedBy.map((deployedBy) => deployedBy.toLocaleLowerCase())
+      whereClause.push(`LOWER(dep1.deployer_address) IN ($(deployedBy:list))`)
     }
 
     if (filters?.entityTypes && filters.entityTypes.length > 0) {
@@ -162,8 +169,6 @@ export class DeploymentsRepository {
       deployerAddress: row.deployer_address,
       version: row.version,
       authChain: row.auth_chain,
-      originServerUrl: row.origin_server_url,
-      originTimestamp: row.origin_timestamp,
       localTimestamp: row.local_timestamp,
       overwrittenBy: row.overwritten_by ?? undefined
     }))
@@ -171,7 +176,7 @@ export class DeploymentsRepository {
 
   private createOrClause(timestampField: string, compare: string, timestampFilter: string): string {
     const equalWithEntityIdComparison = `(LOWER(dep1.entity_id) ${compare} LOWER($(lastId)) AND dep1.${timestampField} = to_timestamp($(${timestampFilter}) / 1000.0))`
-    const timestampComparison = `(dep1.entity_timestamp ${compare} to_timestamp($(${timestampFilter}) / 1000.0))`
+    const timestampComparison = `(dep1.${timestampField} ${compare} to_timestamp($(${timestampFilter}) / 1000.0))`
     return `(${equalWithEntityIdComparison} OR ${timestampComparison})`
   }
 
@@ -179,15 +184,10 @@ export class DeploymentsRepository {
     entityType: EntityType
   ): Promise<{ entityId: EntityId; pointers: Pointer[]; localTimestamp: Timestamp }[]> {
     return this.db.map(
-      `
-            SELECT
-                entity_id,
-                entity_pointers,
-                date_part('epoch', local_timestamp) * 1000 AS local_timestamp
-            FROM deployments
-            WHERE entity_type = $1 AND deleter_deployment IS NULL
-            ORDER BY local_timestamp DESC, entity_id DESC
-            `,
+      `SELECT entity_id, entity_pointers, date_part('epoch', local_timestamp) * 1000 AS local_timestamp ` +
+        `FROM deployments ` +
+        `WHERE entity_type = $1 AND deleter_deployment IS NULL ` +
+        `ORDER BY local_timestamp DESC, entity_id DESC`,
       [entityType],
       (row) => ({
         entityId: row.entity_id,
@@ -199,10 +199,9 @@ export class DeploymentsRepository {
 
   deploymentsSince(entityType: EntityType, timestamp: Timestamp): Promise<number> {
     return this.db.one(
-      `
-            SELECT COUNT(*) AS count
-            FROM deployments
-            WHERE entity_type = $1 AND local_timestamp > to_timestamp($2 / 1000.0)`,
+      `SELECT COUNT(*) AS count ` +
+        `FROM deployments ` +
+        `WHERE entity_type = $1 AND local_timestamp > to_timestamp($2 / 1000.0)`,
       [entityType, timestamp],
       (row) => row.count
     )
@@ -210,34 +209,10 @@ export class DeploymentsRepository {
 
   saveDeployment(entity: Entity, auditInfo: AuditInfo, overwrittenBy: DeploymentId | null): Promise<DeploymentId> {
     return this.db.one(
-      `
-            INSERT INTO deployments (
-                deployer_address,
-                version,
-                entity_type,
-                entity_id,
-                entity_timestamp,
-                entity_pointers,
-                entity_metadata,
-                origin_server_url,
-                origin_timestamp,
-                local_timestamp,
-                auth_chain,
-                deleter_deployment
-            ) VALUES (
-                $(deployer),
-                $(auditInfo.version),
-                $(entity.type),
-                $(entity.id),
-                to_timestamp($(entity.timestamp) / 1000.0),
-                $(entity.pointers),
-                $(metadata),
-                'https://peer.decentraland.org/content',
-                to_timestamp($(auditInfo.localTimestamp) / 1000.0),
-                to_timestamp($(auditInfo.localTimestamp) / 1000.0),
-                $(auditInfo.authChain:json),
-                $(overwrittenBy)
-            ) RETURNING id`,
+      `INSERT INTO deployments (deployer_address, version, entity_type, entity_id, entity_timestamp, entity_pointers, entity_metadata, local_timestamp, auth_chain, deleter_deployment)` +
+        ` VALUES ` +
+        `($(deployer), $(auditInfo.version), $(entity.type), $(entity.id), to_timestamp($(entity.timestamp) / 1000.0), $(entity.pointers), $(metadata), to_timestamp($(auditInfo.localTimestamp) / 1000.0), $(auditInfo.authChain:json), $(overwrittenBy))` +
+        ` RETURNING id`,
       {
         entity,
         auditInfo,
