@@ -17,7 +17,7 @@ import express from 'express'
 import fs from 'fs'
 import log4js from 'log4js'
 import onFinished from 'on-finished'
-import { Denylist, DenylistSignatureValidationResult, isSuccessfulOperation } from '../denylist/Denylist'
+import { Denylist, DenylistOperationResult, isSuccessfulOperation } from '../denylist/Denylist'
 import { parseDenylistTypeAndId } from '../denylist/DenylistTarget'
 import { CURRENT_CATALYST_VERSION, CURRENT_COMMIT_HASH, CURRENT_CONTENT_VERSION } from '../Environment'
 import { ContentAuthenticator } from '../service/auth/Authenticator'
@@ -370,6 +370,21 @@ export class Controller {
     return '?' + nextQueryParams
   }
 
+  async getActiveDeploymentsByContentHash(req: express.Request, res: express.Response) {
+    // Method: GET
+    // Path: /contents/:hashId/active-entities
+    const hashId = req.params.hashId
+
+    const result = await this.service.getActiveDeploymentsByContentHash(hashId)
+
+    if (result.length === 0) {
+      res.status(404).send({ error: 'The entity was not found' })
+      return
+    }
+
+    res.json(result)
+  }
+
   async getDeployments(req: express.Request, res: express.Response) {
     // Method: GET
     // Path: /deployments
@@ -584,7 +599,7 @@ export class Controller {
     }
 
     try {
-      const result: DenylistSignatureValidationResult = await this.denylist.addTarget(target, { timestamp, authChain })
+      const result: DenylistOperationResult = await this.denylist.addTarget(target, { timestamp, authChain })
       if (isSuccessfulOperation(result)) {
         res.status(201).send()
       } else {
@@ -612,7 +627,7 @@ export class Controller {
     const authChain: AuthChain = ContentAuthenticator.createSimpleAuthChain(messageToSign, blocker, signature)
 
     try {
-      const result: DenylistSignatureValidationResult = await this.denylist.removeTarget(target, {
+      const result: DenylistOperationResult = await this.denylist.removeTarget(target, {
         timestamp,
         authChain
       })
