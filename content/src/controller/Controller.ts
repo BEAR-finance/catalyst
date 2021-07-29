@@ -29,6 +29,7 @@ import {
 } from '../service/deployments/DeploymentManager'
 import { Entity } from '../service/Entity'
 import {
+  DeploymentContext,
   DeploymentResult,
   isSuccessfulDeployment,
   LocalDeploymentAuditInfo,
@@ -127,14 +128,18 @@ export class Controller {
       deployFiles = await this.readFiles(files)
       const auditInfo: LocalDeploymentAuditInfo = {
         authChain,
-        version: CURRENT_CONTENT_VERSION,
         migrationData: {
           originalVersion,
           data: migrationInformation
         }
       }
 
-      const deploymentResult: DeploymentResult = await this.service.deployLocalLegacy(deployFiles, entityId, auditInfo)
+      const deploymentResult: DeploymentResult = await this.service.deployEntity(
+        deployFiles.map(({ content }) => content),
+        entityId,
+        auditInfo,
+        DeploymentContext.LOCAL_LEGACY_ENTITY
+      )
 
       if (isSuccessfulDeployment(deploymentResult)) {
         res.send({ creationTimestamp: deploymentResult })
@@ -159,7 +164,6 @@ export class Controller {
     const ethAddress: EthAddress = req.body.ethAddress
     const signature: Signature = req.body.signature
     const files = req.files
-    const origin = req.header('x-upload-origin') ?? 'unknown'
     const fixAttempt: boolean = req.query.fix === 'true'
 
     let deployFiles: ContentFile[] = []
@@ -169,20 +173,30 @@ export class Controller {
 
       let deploymentResult: DeploymentResult = { errors: [] }
       if (fixAttempt) {
-        deploymentResult = await this.service.deployToFix(deployFiles, entityId, auditInfo, origin)
+        deploymentResult = await this.service.deployEntity(
+          deployFiles.map(({ content }) => content),
+          entityId,
+          auditInfo,
+          DeploymentContext.FIX_ATTEMPT
+        )
       } else {
-        deploymentResult = await this.service.deployEntity(deployFiles, entityId, auditInfo, origin)
+        deploymentResult = await this.service.deployEntity(
+          deployFiles.map(({ content }) => content),
+          entityId,
+          auditInfo,
+          DeploymentContext.LOCAL
+        )
       }
 
       if (isSuccessfulDeployment(deploymentResult)) {
         res.send({ creationTimestamp: deploymentResult })
       } else {
         Controller.LOGGER.warn(`Returning error '${deploymentResult.errors.join('\n')}'`)
-        res.status(400).send(deploymentResult.errors.join('\n'))
+        res.status(400).send({ errors: deploymentResult.errors })
       }
     } catch (error) {
       Controller.LOGGER.warn(`Returning error '${error.message}'`)
-      res.status(500).send(error.message)
+      res.status(500)
     } finally {
       await this.deleteUploadedFiles(deployFiles)
     }
@@ -197,14 +211,14 @@ export class Controller {
 
   private async readFiles(files: { [fieldname: string]: Express.Multer.File[] } | Express.Multer.File[]) {
     if (files instanceof Array) {
-      return await Promise.all(files.map((f) => this.readFile(f.fieldname, f.path)))
+      return await Promise.all(files.map((f) => this.readFile(f.path)))
     } else {
       return []
     }
   }
 
-  private async readFile(name: string, path: string): Promise<ContentFile> {
-    return { name, path, content: await fs.promises.readFile(path) }
+  private async readFile(path: string): Promise<ContentFile> {
+    return { path, content: await fs.promises.readFile(path) }
   }
 
   private async deleteUploadedFiles(deployFiles: ContentFile[]): Promise<void> {
@@ -280,6 +294,7 @@ export class Controller {
     }
 
     const { deployments } = await this.service.getDeployments({
+      fields: [DeploymentField.AUDIT_INFO],
       filters: { entityIds: [entityId], entityTypes: [type] }
     })
 
@@ -302,13 +317,13 @@ export class Controller {
 
   async getPointerChanges(req: express.Request, res: express.Response) {
     // Method: GET
-    // Path: /pointerChanges
+    // Path: /pointer-changes
     // Query String: ?from={timestamp}&to={timestamp}&offset={number}&limit={number}&entityType={entityType}
     const stringEntityTypes = this.asArray<string>(req.query.entityType)
     const entityTypes: (EntityType | undefined)[] | undefined = stringEntityTypes
       ? stringEntityTypes.map((type) => this.parseEntityType(type))
       : undefined
-    //deprecated
+    // deprecated
     const fromLocalTimestamp: Timestamp | undefined = this.asInt(req.query.fromLocalTimestamp)
     // deprecated
     const toLocalTimestamp: Timestamp | undefined = this.asInt(req.query.toLocalTimestamp)
@@ -321,6 +336,13 @@ export class Controller {
     // Validate type is valid
     if (entityTypes && entityTypes.some((type) => !type)) {
       res.status(400).send({ error: `Found an unrecognized entity type` })
+      return
+    }
+
+    if (offset && offset > 5000) {
+      res
+        .status(400)
+        .send({ error: `Offset can't be higher than 5000. Please use the 'next' property for pagination.` })
       return
     }
 
@@ -419,8 +441,15 @@ export class Controller {
       return
     }
 
+    if (offset && offset > 5000) {
+      res
+        .status(400)
+        .send({ error: `Offset can't be higher than 5000. Please use the 'next' property for pagination.` })
+      return
+    }
+
     // Validate fields are correct or empty
-    let enumFields: DeploymentField[] = [...DEFAULT_FIELDS_ON_DEPLOYMENTS]
+    let enumFields: DeploymentField[] = DEFAULT_FIELDS_ON_DEPLOYMENTS
     if (fields && fields.trim().length > 0) {
       const acceptedValues = Object.values(DeploymentField).map((e) => e.toString())
       enumFields = fields
@@ -473,6 +502,7 @@ export class Controller {
     }
 
     const deploymentOptions = {
+      fields: enumFields,
       filters: requestFilters,
       sortBy: sortBy,
       offset: offset,
@@ -511,8 +541,12 @@ export class Controller {
         nextFilters.to = lastDeployment.entityTimestamp
       }
     }
+
+    const fields = !options.fields || options.fields === DEFAULT_FIELDS_ON_DEPLOYMENTS ? '' : options.fields.join(',')
+
     const nextQueryParams = toQueryParams({
       ...nextFilters,
+      fields,
       sortingField: field,
       sortingOrder: order,
       lastId: lastDeployment.entityId,
@@ -667,7 +701,7 @@ export class Controller {
 
   async getFailedDeployments(req: express.Request, res: express.Response) {
     // Method: GET
-    // Path: /failedDeployments
+    // Path: /failed-deployments
 
     const failedDeployments = await this.service.getAllFailedDeployments()
     res.send(failedDeployments)
@@ -714,8 +748,7 @@ export type ControllerDenylistData = {
   }
 }
 
-export type ContentFile = {
-  name: string
+type ContentFile = {
   path?: string
   content: Buffer
 }

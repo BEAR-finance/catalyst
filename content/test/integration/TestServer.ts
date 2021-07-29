@@ -5,6 +5,7 @@ import { Server } from '@katalyst/content/Server'
 import { FailedDeployment } from '@katalyst/content/service/errors/FailedDeploymentsManager'
 import {
   ContentClient,
+  DeploymentData,
   DeploymentFields,
   DeploymentOptions,
   DeploymentWithMetadataContentAndPointers
@@ -24,7 +25,7 @@ import {
 } from 'dcl-catalyst-commons'
 import fetch from 'node-fetch'
 import { assertResponseIsOkOrThrow } from './E2EAssertions'
-import { deleteFolderRecursive, DeployData, hashAndSignMessage, Identity } from './E2ETestUtils'
+import { deleteFolderRecursive, hashAndSignMessage, Identity } from './E2ETestUtils'
 
 /** A wrapper around a server that helps make tests more easily */
 export class TestServer extends Server {
@@ -39,7 +40,11 @@ export class TestServer extends Server {
     super(env)
     this.serverPort = env.getConfig(EnvironmentConfig.SERVER_PORT)
     this.storageFolder = env.getConfig(EnvironmentConfig.STORAGE_ROOT_FOLDER)
-    this.client = new ContentClient(this.getAddress(), '', env.getBean(Bean.FETCHER))
+    this.client = new ContentClient({
+      contentUrl: this.getAddress(),
+      proofOfWorkEnabled: false,
+      fetcher: env.getBean(Bean.FETCHER)
+    })
   }
 
   getAddress(): ServerAddress {
@@ -63,12 +68,12 @@ export class TestServer extends Server {
     }
   }
 
-  async deploy(deployData: DeployData, fix: boolean = false): Promise<Timestamp> {
+  async deploy(deployData: DeploymentData, fix: boolean = false): Promise<Timestamp> {
     return this.client.deployEntity(deployData, fix)
   }
 
   getFailedDeployments(): Promise<FailedDeployment[]> {
-    return this.makeRequest(`${this.getAddress()}/failedDeployments`)
+    return this.makeRequest(`${this.getAddress()}/failed-deployments`)
   }
 
   getEntitiesByPointers(type: EntityType, pointers: Pointer[]): Promise<ControllerEntity[]> {

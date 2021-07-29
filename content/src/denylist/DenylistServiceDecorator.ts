@@ -6,7 +6,6 @@ import {
   Pointer,
   ServerStatus
 } from 'dcl-catalyst-commons'
-import { ContentFile } from '../controller/Controller'
 import { DenylistRepository } from '../repository/extensions/DenylistRepository'
 import { Repository } from '../repository/Repository'
 import { DB_REQUEST_PRIORITY } from '../repository/RepositoryQueue'
@@ -15,6 +14,8 @@ import { Deployment, DeploymentOptions, PointerChangesFilters } from '../service
 import { Entity } from '../service/Entity'
 import { EntityFactory } from '../service/EntityFactory'
 import {
+  DeploymentContext,
+  DeploymentFiles,
   DeploymentListener,
   DeploymentResult,
   LocalDeploymentAuditInfo,
@@ -80,54 +81,19 @@ export class DenylistServiceDecorator implements MetaverseContentService {
     return availability
   }
 
-  async deployToFix(
-    files: ContentFile[],
-    entityId: EntityId,
-    auditInfo: LocalDeploymentAuditInfo,
-    origin: string
-  ): Promise<DeploymentResult> {
-    return this.repository.task(
-      async (task) => {
-        // Validate the deployment
-        await this.validateDeployment(task.denylist, files, entityId, auditInfo)
-
-        // If all validations passed, then deploy the entity
-        return this.service.deployToFix(files, entityId, auditInfo, origin, task)
-      },
-      { priority: DB_REQUEST_PRIORITY.HIGH }
-    )
-  }
-
   async deployEntity(
-    files: ContentFile[],
+    files: DeploymentFiles,
     entityId: EntityId,
     auditInfo: LocalDeploymentAuditInfo,
-    origin: string
+    context: DeploymentContext = DeploymentContext.LOCAL
   ): Promise<DeploymentResult> {
     return this.repository.task(
       async (task) => {
         // Validate the deployment
-        await this.validateDeployment(task.denylist, files, entityId, auditInfo)
+        const hashedFiles = await this.validateDeployment(task.denylist, files, entityId, auditInfo)
 
         // If all validations passed, then deploy the entity
-        return this.service.deployEntity(files, entityId, auditInfo, origin, task)
-      },
-      { priority: DB_REQUEST_PRIORITY.HIGH }
-    )
-  }
-
-  async deployLocalLegacy(
-    files: ContentFile[],
-    entityId: string,
-    auditInfo: LocalDeploymentAuditInfo
-  ): Promise<DeploymentResult> {
-    return this.repository.task(
-      async (task) => {
-        // Validate the deployment
-        await this.validateDeployment(task.denylist, files, entityId, auditInfo)
-
-        // If all validations passed, then deploy the entity
-        return this.service.deployLocalLegacy(files, entityId, auditInfo, task)
+        return this.service.deployEntity(hashedFiles, entityId, auditInfo, context, task)
       },
       { priority: DB_REQUEST_PRIORITY.HIGH }
     )
@@ -261,7 +227,7 @@ export class DenylistServiceDecorator implements MetaverseContentService {
 
   private async validateDeployment(
     denylistRepo: DenylistRepository,
-    files: ContentFile[],
+    files: DeploymentFiles,
     entityId: EntityId,
     auditInfo: LocalDeploymentAuditInfo
   ) {
@@ -272,10 +238,14 @@ export class DenylistServiceDecorator implements MetaverseContentService {
     }
 
     // Find the entity file
-    const entityFile: ContentFile = ServiceImpl.findEntityFile(files)
+    const hashes: Map<ContentFileHash, Buffer> = await ServiceImpl.hashFiles(files, entityId)
+    const entityFile = hashes.get(entityId)
+    if (!entityFile) {
+      throw new Error(`Failed to find the entity file.`)
+    }
 
     // Parse entity file into an Entity
-    const entity: Entity = EntityFactory.fromFile(entityFile, entityId)
+    const entity: Entity = EntityFactory.fromBufferWithId(entityFile, entityId)
 
     // No deployments with denylisted hash are allowed
     const contentTargets: DenylistTarget[] = Array.from(entity.content?.values() ?? []).map((fileHash) =>
@@ -290,6 +260,8 @@ export class DenylistServiceDecorator implements MetaverseContentService {
     if (await this.areDenylisted(denylistRepo, ...pointerTargets)) {
       throw new Error(`Can't allow the deployment since the entity contains a denylisted pointer.`)
     }
+
+    return hashes
   }
 
   /** Since entity ids are also file hashes, we need to check for all possible targets */

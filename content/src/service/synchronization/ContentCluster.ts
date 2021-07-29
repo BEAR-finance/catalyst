@@ -1,4 +1,4 @@
-import { Fetcher, ServerAddress, ServerName, Timestamp } from 'dcl-catalyst-commons'
+import { Fetcher, ServerAddress, Timestamp } from 'dcl-catalyst-commons'
 import { DAOClient } from 'decentraland-katalyst-commons/DAOClient'
 import { ServerMetadata } from 'decentraland-katalyst-commons/ServerMetadata'
 import { delay } from 'decentraland-katalyst-utils/util'
@@ -34,7 +34,8 @@ export class ContentCluster implements IdentityProvider {
     private readonly challengeSupervisor: ChallengeSupervisor,
     private readonly fetcher: Fetcher,
     private readonly systemProperties: SystemPropertiesManager,
-    private readonly bootstrapFromScratch: boolean
+    private readonly bootstrapFromScratch: boolean,
+    private readonly proofOfWorkEnabled: boolean
   ) {}
 
   /** Connect to the DAO for the first time */
@@ -106,7 +107,12 @@ export class ContentCluster implements IdentityProvider {
           const lastDeploymentTimestamp = lastKnownTimestamps.get(newAddress) ?? 0
 
           // Create and store the new client
-          const newClient = new ContentServerClient(newAddress, lastDeploymentTimestamp, this.fetcher)
+          const newClient = new ContentServerClient(
+            newAddress,
+            lastDeploymentTimestamp,
+            this.fetcher.clone(), // We need a Fetcher per catalyst
+            this.proofOfWorkEnabled
+          )
           this.serverClients.set(newAddress, newClient)
           ContentCluster.LOGGER.info(`Discovered new server '${newAddress}'`)
         }
@@ -171,12 +177,8 @@ export class ContentCluster implements IdentityProvider {
 
         if (serversWithMyChallengeText.length === 1) {
           const [address] = serversWithMyChallengeText[0]
-          const name = encodeURIComponent(address)
-          this.myIdentity = {
-            ...serversByAddresses.get(address)!,
-            name
-          }
-          ContentCluster.LOGGER.info(`Calculated my identity. My address is ${address} and my name is '${name}'`)
+          this.myIdentity = serversByAddresses.get(address)!
+          ContentCluster.LOGGER.info(`Calculated my identity. My address is ${address}`)
           break
         } else if (serversWithMyChallengeText.length > 1) {
           ContentCluster.LOGGER.warn(
@@ -216,4 +218,4 @@ export class ContentCluster implements IdentityProvider {
   }
 }
 
-type ServerIdentity = ServerMetadata & { name: ServerName }
+type ServerIdentity = ServerMetadata
