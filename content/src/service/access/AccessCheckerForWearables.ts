@@ -4,7 +4,7 @@ import { EthAddress } from 'dcl-crypto'
 import log4js from 'log4js'
 
 export class AccessCheckerForWearables {
-  private static readonly L1_NETWORKS = ['mainnet', 'ropsten', 'kovan', 'rinkeby', 'goerli']
+  private static readonly L1_NETWORKS = ['mainnet', 'ropsten', 'kovan', 'rinkeby', 'goerli', 'bsc']
   private static readonly L2_NETWORKS = ['matic', 'mumbai']
 
   constructor(
@@ -12,7 +12,7 @@ export class AccessCheckerForWearables {
     private readonly collectionsL1SubgraphUrl: string,
     private readonly collectionsL2SubgraphUrl: string,
     private readonly LOGGER: log4js.Logger
-  ) {}
+  ) { }
 
   public async checkAccess(pointers: Pointer[], ethAddress: EthAddress): Promise<string[]> {
     const errors: string[] = []
@@ -54,7 +54,7 @@ export class AccessCheckerForWearables {
       if (parsed?.type === 'blockchain-collection-v2-asset') {
         return parsed as BlockchainCollectionV2Asset
       }
-    } catch {}
+    } catch { }
     return null
   }
 

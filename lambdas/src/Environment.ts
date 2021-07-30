@@ -10,7 +10,7 @@ import { SmartContentServerFetcherFactory } from './utils/SmartContentServerFetc
 import { TheGraphClientFactory } from './utils/TheGraphClientFactory'
 
 const DEFAULT_SERVER_PORT = 7070
-export const DEFAULT_ETH_NETWORK = 'ropsten'
+export const DEFAULT_ETH_NETWORK = 'bsc'
 export const DEFAULT_ENS_OWNER_PROVIDER_URL_ROPSTEN =
   'https://api.thegraph.com/subgraphs/name/decentraland/marketplace-ropsten'
 const DEFAULT_ENS_OWNER_PROVIDER_URL_MAINNET = 'https://api.thegraph.com/subgraphs/name/decentraland/marketplace'

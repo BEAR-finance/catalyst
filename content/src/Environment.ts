@@ -31,9 +31,13 @@ import { ContentStorageFactory } from './storage/ContentStorageFactory'
 export const CURRENT_CONTENT_VERSION: EntityVersion = EntityVersion.V3
 const DEFAULT_STORAGE_ROOT_FOLDER = 'storage'
 const DEFAULT_SERVER_PORT = 6969
-export const DEFAULT_ETH_NETWORK = 'ropsten'
+export const DEFAULT_ETH_NETWORK = 'bsc'
 export const DEFAULT_LAND_MANAGER_SUBGRAPH_ROPSTEN =
   'https://api.thegraph.com/subgraphs/name/decentraland/land-manager-ropsten'
+export const DEFAULT_LAND_MANAGER_SUBGRAPH_BSC =
+  'https://api.thegraph.com/subgraphs/name/decentraland/land-manager-ropsten'
+export const DEFAULT_COLLECTIONS_SUBGRAPH_BSC =
+  'https://api.thegraph.com/subgraphs/name/decentraland/collections-ethereum-ropsten'
 export const DEFAULT_LAND_MANAGER_SUBGRAPH_MAINNET = 'https://api.thegraph.com/subgraphs/name/decentraland/land-manager'
 export const DEFAULT_COLLECTIONS_SUBGRAPH_ROPSTEN =
   'https://api.thegraph.com/subgraphs/name/decentraland/collections-ethereum-ropsten'
@@ -249,8 +253,8 @@ export class EnvironmentBuilder {
       EnvironmentConfig.LAND_MANAGER_SUBGRAPH_URL,
       () =>
         process.env.LAND_MANAGER_SUBGRAPH_URL ??
-        (env.getConfig(EnvironmentConfig.ETH_NETWORK) === 'mainnet'
-          ? DEFAULT_LAND_MANAGER_SUBGRAPH_MAINNET
+        (env.getConfig(EnvironmentConfig.ETH_NETWORK) === 'bsc'
+          ? DEFAULT_LAND_MANAGER_SUBGRAPH_BSC
           : DEFAULT_LAND_MANAGER_SUBGRAPH_ROPSTEN)
     )
     this.registerConfigIfNotAlreadySet(
@@ -258,8 +262,8 @@ export class EnvironmentBuilder {
       EnvironmentConfig.COLLECTIONS_L1_SUBGRAPH_URL,
       () =>
         process.env.COLLECTIONS_L1_SUBGRAPH_URL ??
-        (env.getConfig(EnvironmentConfig.ETH_NETWORK) === 'mainnet'
-          ? DEFAULT_COLLECTIONS_SUBGRAPH_MAINNET
+        (env.getConfig(EnvironmentConfig.ETH_NETWORK) === 'bsc'
+          ? DEFAULT_COLLECTIONS_SUBGRAPH_BSC
           : DEFAULT_COLLECTIONS_SUBGRAPH_ROPSTEN)
     )
 

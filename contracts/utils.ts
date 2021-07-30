@@ -5,6 +5,24 @@ import { Catalyst } from './Catalyst'
 import { List } from './List'
 
 export const networks = {
+  bsc: {
+    wss: 'wss://bsc-ws-node.nariox.org:443',
+    http: 'https://bsc-dataseed.binance.org/',
+    contracts: {
+      catalyst: {
+        address: '0xadd085f2318e9678bbb18b3e0711328f902b374b',
+        class: Catalyst
+      },
+      POIs: {
+        address: '0x5DC4a5C214f2161F0D5595a6dDd9352409aE3Ab4',
+        class: List
+      },
+      denylistedNames: {
+        address: '0x20c6f1e86eba703a14414a0cbc1b55c89dba7a0f',
+        class: List
+      }
+    }
+  },
   ropsten: {
     wss: 'wss://ropsten.infura.io/ws/v3/2c902c2e3b8947d3b34bba7ca48635fc',
     http: 'https://ropsten.infura.io/v3/2c902c2e3b8947d3b34bba7ca48635fc',

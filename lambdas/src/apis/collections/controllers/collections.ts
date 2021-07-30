@@ -101,6 +101,8 @@ function getProtocol(chainId: string): string | undefined {
       return 'kovan'
     case ChainId.MATIC_MAINNET:
       return 'matic'
+    case ChainId.BSC:
+      return 'bsc'
     case ChainId.MATIC_MUMBAI:
       return 'mumbai'
   }

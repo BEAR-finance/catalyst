@@ -8,7 +8,7 @@ export class TheGraphClient {
   public static readonly MAX_PAGE_SIZE = 1000
   private static readonly LOGGER = log4js.getLogger('TheGraphClient')
 
-  constructor(private readonly urls: URLs, private readonly fetcher: Fetcher) {}
+  constructor(private readonly urls: URLs, private readonly fetcher: Fetcher) { }
 
   public async findOwnersByName(names: string[]): Promise<{ name: string; owner: EthAddress }[]> {
     const query: Query<
@@ -224,7 +224,7 @@ export class TheGraphClient {
     pagination: { limit: number; lastId: string | undefined }
   ): Promise<WearableId[]> {
     // Order will be L1 > L2
-    const L1_NETWORKS = ['mainnet', 'ropsten', 'kovan', 'rinkeby', 'goerli']
+    const L1_NETWORKS = ['mainnet', 'ropsten', 'kovan', 'rinkeby', 'goerli', 'bsc']
     const L2_NETWORKS = ['matic', 'mumbai']
 
     let limit = pagination.limit
