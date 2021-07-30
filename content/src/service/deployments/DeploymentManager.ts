@@ -1,3 +1,4 @@
+import { DeploymentField } from '@katalyst/content/controller/Controller'
 import { ContentFilesRepository } from '@katalyst/content/repository/extensions/ContentFilesRepository'
 import { DeploymentPointerChangesRepository } from '@katalyst/content/repository/extensions/DeploymentPointerChangesRepository'
 import { DeploymentId, DeploymentsRepository } from '@katalyst/content/repository/extensions/DeploymentsRepository'
@@ -56,6 +57,7 @@ export class DeploymentManager {
     const migrationData = await migrationDataRepository.getMigrationData(deploymentIds)
 
     const deployments: Deployment[] = deploymentsResult.map((result) => ({
+      entityVersion: result.version,
       entityType: result.entityType,
       entityId: result.entityId,
       pointers: result.pointers,
@@ -209,6 +211,7 @@ export type PartialDeploymentPointerChanges = {
 }
 
 export type DeploymentOptions = {
+  fields?: DeploymentField[]
   filters?: DeploymentFilters
   sortBy?: DeploymentSorting
   offset?: number

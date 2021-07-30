@@ -1,11 +1,10 @@
-import { ContentFileHash, DeploymentWithAuditInfo, ENTITY_FILE_NAME } from 'dcl-catalyst-commons'
+import { ContentFileHash, DeploymentWithAuditInfo } from 'dcl-catalyst-commons'
 import log4js from 'log4js'
 import { Readable } from 'stream'
-import { ContentFile } from '../../controller/Controller'
 import { Entity } from '../Entity'
 import { EntityFactory } from '../EntityFactory'
 import { FailureReason } from '../errors/FailedDeploymentsManager'
-import { ClusterDeploymentsService, DeploymentResult, isInvalidDeployment } from '../Service'
+import { ClusterDeploymentsService, DeploymentContext, DeploymentResult, isInvalidDeployment } from '../Service'
 import { ContentServerClient } from './clients/ContentServerClient'
 import { tryOnCluster } from './ClusterUtils'
 import { ContentCluster } from './ContentCluster'
@@ -36,22 +35,28 @@ export class EventDeployer {
     EventDeployer.LOGGER.trace(`Downloading files for entity (${deployment.entityType}, ${deployment.entityId})`)
 
     // Download the entity file
-    const entityFile: ContentFile | undefined = await this.getEntityFile(deployment, source)
+    const entityFile: Buffer | undefined = await this.getEntityFile(deployment, source)
 
     const { auditInfo } = deployment
 
     if (entityFile) {
+      const isLegacyEntity = !!auditInfo.migrationData
       if (auditInfo.overwrittenBy) {
         // Deploy the entity as overwritten
         return this.buildDeploymentExecution(deployment, () =>
-          this.service.deployOverwrittenEntityFromCluster(entityFile, deployment.entityId, auditInfo)
+          this.service.deployEntity(
+            [entityFile],
+            deployment.entityId,
+            auditInfo,
+            isLegacyEntity ? DeploymentContext.OVERWRITTEN_LEGACY_ENTITY : DeploymentContext.OVERWRITTEN
+          )
         )
       } else {
         // Build entity
-        const entity: Entity = EntityFactory.fromFile(entityFile, deployment.entityId)
+        const entity: Entity = EntityFactory.fromBufferWithId(entityFile, deployment.entityId)
 
         // Download all entity's files
-        const files: ContentFile[] | undefined = await this.getContentFiles(entity, source)
+        const files: Buffer[] | undefined = await this.getContentFiles(entity, source)
 
         if (files) {
           // Add the entity file to the list of files
@@ -59,7 +64,12 @@ export class EventDeployer {
 
           // Since we could fetch all files, deploy the new entity normally
           return this.buildDeploymentExecution(deployment, () =>
-            this.service.deployEntityFromCluster(files, deployment.entityId, auditInfo)
+            this.service.deployEntity(
+              files,
+              deployment.entityId,
+              auditInfo,
+              isLegacyEntity ? DeploymentContext.SYNCED_LEGACY_ENTITY : DeploymentContext.SYNCED
+            )
           )
         } else {
           // Looks like there was a problem fetching one of the files
@@ -77,7 +87,7 @@ export class EventDeployer {
   /**
    * Get all the files needed to deploy the new entity
    */
-  private async getContentFiles(entity: Entity, source?: ContentServerClient): Promise<ContentFile[] | undefined> {
+  private async getContentFiles(entity: Entity, source?: ContentServerClient): Promise<Buffer[] | undefined> {
     // Read the entity, and get all content file hashes
     const allFileHashes: ContentFileHash[] = Array.from(entity.content?.values() ?? [])
 
@@ -88,7 +98,7 @@ export class EventDeployer {
     )
 
     // Download all content files
-    const files: ContentFile[] = []
+    const files: Buffer[] = []
     for (let i = 0; i < unknownFileHashes.length; i++) {
       const fileHash = unknownFileHashes[i]
       EventDeployer.LOGGER.trace(
@@ -117,26 +127,17 @@ export class EventDeployer {
     return files
   }
 
-  private async getEntityFile(
+  private getEntityFile(
     deployment: DeploymentWithAuditInfo,
     source?: ContentServerClient
-  ): Promise<ContentFile | undefined> {
-    const file: ContentFile | undefined = await this.getFileOrUndefined(deployment.entityId, source)
-
-    // If we could download the entity file, rename it
-    if (file) {
-      file.name = ENTITY_FILE_NAME
-    }
-    return file
+  ): Promise<Buffer | undefined> {
+    return this.getFileOrUndefined(deployment.entityId, source)
   }
 
   /**
    * This method tries to get a file from the other servers on the DAO. If all the request fail, then it returns 'undefined'.
    */
-  private getFileOrUndefined(
-    fileHash: ContentFileHash,
-    source?: ContentServerClient
-  ): Promise<ContentFile | undefined> {
+  private getFileOrUndefined(fileHash: ContentFileHash, source?: ContentServerClient): Promise<Buffer | undefined> {
     return this.tryOnClusterOrUndefined(
       (server) => server.getContentFile(fileHash),
       this.cluster,

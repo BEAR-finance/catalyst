@@ -15,8 +15,6 @@ import { DeploymentManagerFactory } from './service/deployments/DeploymentManage
 import { FailedDeploymentsManager } from './service/errors/FailedDeploymentsManager'
 import { GarbageCollectionManagerFactory } from './service/garbage-collection/GarbageCollectionManagerFactory'
 import { PointerManagerFactory } from './service/pointers/PointerManagerFactory'
-import { SegmentIoAnalyticsFactory } from './service/reporters/SegmentIoAnalyticsFactory'
-import { SQSDeploymentReporterFactory } from './service/reporters/SQSDeploymentReporterFactory'
 import { ServiceFactory } from './service/ServiceFactory'
 import { SnapshotManagerFactory } from './service/snapshots/SnapshotManagerFactory'
 import { ChallengeSupervisor } from './service/synchronization/ChallengeSupervisor'
@@ -25,7 +23,7 @@ import { ClusterSynchronizationManagerFactory } from './service/synchronization/
 import { ContentClusterFactory } from './service/synchronization/ContentClusterFactory'
 import { EventDeployerFactory } from './service/synchronization/EventDeployerFactory'
 import { SystemPropertiesManagerFactory } from './service/system-properties/SystemPropertiesManagerFactory'
-import { ValidationsFactory } from './service/validations/ValidationsFactory'
+import { ValidatorFactory } from './service/validations/ValidatorFactory'
 import { ContentStorageFactory } from './storage/ContentStorageFactory'
 
 export const CURRENT_CONTENT_VERSION: EntityVersion = EntityVersion.V3
@@ -47,6 +45,15 @@ export const DEFAULT_COLLECTIONS_SUBGRAPH_MATIC_MUMBAI =
   'https://api.thegraph.com/subgraphs/name/decentraland/collections-matic-mumbai'
 export const DEFAULT_COLLECTIONS_SUBGRAPH_MATIC_MAINNET =
   'https://api.thegraph.com/subgraphs/name/decentraland/collections-matic-mainnet'
+export const DEFAULT_BLOCKS_SUBGRAPH_ROPSTEN =
+  'https://api.thegraph.com/subgraphs/name/decentraland/blocks-ethereum-ropsten'
+export const DEFAULT_BLOCKS_SUBGRAPH_MAINNET =
+  'https://api.thegraph.com/subgraphs/name/decentraland/blocks-ethereum-mainnet'
+export const DEFAULT_BLOCKS_SUBGRAPH_MATIC_MUMBAI =
+  'https://api.thegraph.com/subgraphs/name/decentraland/blocks-matic-mumbai'
+export const DEFAULT_BLOCKS_SUBGRAPH_MATIC_MAINNET =
+  'https://api.thegraph.com/subgraphs/name/decentraland/blocks-matic-mainnet'
+
 export const CURRENT_COMMIT_HASH = process.env.COMMIT_HASH ?? 'Unknown'
 export const CURRENT_CATALYST_VERSION = process.env.CATALYST_VERSION ?? 'Unknown'
 export const DEFAULT_DATABASE_CONFIG = {
@@ -120,7 +127,7 @@ export const enum Bean {
   AUTHENTICATOR,
   FAILED_DEPLOYMENTS_MANAGER,
   FETCHER,
-  VALIDATIONS,
+  VALIDATOR,
   CHALLENGE_SUPERVISOR,
   REPOSITORY,
   MIGRATION_MANAGER,
@@ -135,7 +142,6 @@ export enum EnvironmentConfig {
   SERVER_PORT,
   METRICS,
   LOG_REQUESTS,
-  SEGMENT_WRITE_KEY,
   UPDATE_FROM_DAO_INTERVAL,
   SYNC_WITH_SERVERS_INTERVAL,
   ALLOW_LEGACY_ENTITIES,
@@ -149,9 +155,7 @@ export enum EnvironmentConfig {
   LAND_MANAGER_SUBGRAPH_URL,
   COLLECTIONS_L1_SUBGRAPH_URL,
   COLLECTIONS_L2_SUBGRAPH_URL,
-  SQS_QUEUE_URL_REPORTING,
-  SQS_ACCESS_KEY_ID,
-  SQS_SECRET_ACCESS_KEY,
+  PROOF_OF_WORK,
   PSQL_PASSWORD,
   PSQL_USER,
   PSQL_DATABASE,
@@ -167,7 +171,9 @@ export enum EnvironmentConfig {
   CONTENT_SERVER_ADDRESS,
   REPOSITORY_QUEUE_MAX_CONCURRENCY,
   REPOSITORY_QUEUE_MAX_QUEUED,
-  CACHE_SIZES
+  CACHE_SIZES,
+  BLOCKS_L1_SUBGRAPH_URL,
+  BLOCKS_L2_SUBGRAPH_URL
 }
 
 export class EnvironmentBuilder {
@@ -207,7 +213,6 @@ export class EnvironmentBuilder {
       EnvironmentConfig.SERVER_PORT,
       () => process.env.CONTENT_SERVER_PORT ?? DEFAULT_SERVER_PORT
     )
-    this.registerConfigIfNotAlreadySet(env, EnvironmentConfig.SEGMENT_WRITE_KEY, () => process.env.SEGMENT_WRITE_KEY)
     this.registerConfigIfNotAlreadySet(env, EnvironmentConfig.METRICS, () => process.env.METRICS !== 'false')
     this.registerConfigIfNotAlreadySet(env, EnvironmentConfig.LOG_REQUESTS, () => process.env.LOG_REQUESTS !== 'false')
     this.registerConfigIfNotAlreadySet(
@@ -279,15 +284,24 @@ export class EnvironmentBuilder {
 
     this.registerConfigIfNotAlreadySet(
       env,
-      EnvironmentConfig.SQS_QUEUE_URL_REPORTING,
-      () => process.env.SQS_QUEUE_URL_REPORTING
+      EnvironmentConfig.BLOCKS_L1_SUBGRAPH_URL,
+      () =>
+        process.env.BLOCKS_L1_SUBGRAPH_URL ??
+        (env.getConfig(EnvironmentConfig.ETH_NETWORK) === 'mainnet'
+          ? DEFAULT_BLOCKS_SUBGRAPH_MAINNET
+          : DEFAULT_BLOCKS_SUBGRAPH_ROPSTEN)
     )
-    this.registerConfigIfNotAlreadySet(env, EnvironmentConfig.SQS_ACCESS_KEY_ID, () => process.env.SQS_ACCESS_KEY_ID)
+
     this.registerConfigIfNotAlreadySet(
       env,
-      EnvironmentConfig.SQS_SECRET_ACCESS_KEY,
-      () => process.env.SQS_SECRET_ACCESS_KEY
+      EnvironmentConfig.BLOCKS_L2_SUBGRAPH_URL,
+      () =>
+        process.env.BLOCKS_L2_SUBGRAPH_URL ??
+        (process.env.ETH_NETWORK === 'mainnet'
+          ? DEFAULT_BLOCKS_SUBGRAPH_MATIC_MAINNET
+          : DEFAULT_BLOCKS_SUBGRAPH_MATIC_MUMBAI)
     )
+    this.registerConfigIfNotAlreadySet(env, EnvironmentConfig.PROOF_OF_WORK, () => process.env.PROOF_OF_WORK === 'true')
     this.registerConfigIfNotAlreadySet(
       env,
       EnvironmentConfig.PSQL_PASSWORD,
@@ -396,10 +410,8 @@ export class EnvironmentBuilder {
     this.registerBeanIfNotAlreadySet(env, Bean.POINTER_MANAGER, () => PointerManagerFactory.create(env))
     this.registerBeanIfNotAlreadySet(env, Bean.ACCESS_CHECKER, () => AccessCheckerImplFactory.create(env))
     this.registerBeanIfNotAlreadySet(env, Bean.FAILED_DEPLOYMENTS_MANAGER, () => new FailedDeploymentsManager())
-    this.registerBeanIfNotAlreadySet(env, Bean.VALIDATIONS, () => ValidationsFactory.create(env))
+    this.registerBeanIfNotAlreadySet(env, Bean.VALIDATOR, () => ValidatorFactory.create(env))
     this.registerBeanIfNotAlreadySet(env, Bean.SERVICE, () => ServiceFactory.create(env))
-    this.registerBeanIfNotAlreadySet(env, Bean.SEGMENT_IO_ANALYTICS, () => SegmentIoAnalyticsFactory.create(env))
-    this.registerBeanIfNotAlreadySet(env, Bean.SQS_DEPLOYMENT_REPORTER, () => SQSDeploymentReporterFactory.create(env))
     this.registerBeanIfNotAlreadySet(env, Bean.SNAPSHOT_MANAGER, () => SnapshotManagerFactory.create(env))
     this.registerBeanIfNotAlreadySet(env, Bean.GARBAGE_COLLECTION_MANAGER, () =>
       GarbageCollectionManagerFactory.create(env)

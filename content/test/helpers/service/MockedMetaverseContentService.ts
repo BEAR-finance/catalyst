@@ -1,4 +1,3 @@
-import { ContentFile } from '@katalyst/content/controller/Controller'
 import { CURRENT_CONTENT_VERSION } from '@katalyst/content/Environment'
 import { Database } from '@katalyst/content/repository/Database'
 import {
@@ -10,6 +9,7 @@ import {
 import { Entity } from '@katalyst/content/service/Entity'
 import { FailedDeployment } from '@katalyst/content/service/errors/FailedDeploymentsManager'
 import {
+  DeploymentContext,
   DeploymentListener,
   LocalDeploymentAuditInfo,
   MetaverseContentService
@@ -20,6 +20,7 @@ import {
   ContentFileHash,
   EntityId,
   EntityType,
+  EntityVersion,
   LegacyAuditInfo,
   PartialDeploymentHistory,
   Pointer,
@@ -33,7 +34,7 @@ import { buildEntityAndFile } from './EntityTestFactory'
 export class MockedMetaverseContentService implements MetaverseContentService {
   static readonly STATUS: ServerStatus = {
     name: 'name',
-    version: '4.20',
+    version: EntityVersion.V3,
     currentTime: Date.now(),
     lastImmutableTime: 0,
     historySize: 0
@@ -113,21 +114,13 @@ export class MockedMetaverseContentService implements MetaverseContentService {
     )
   }
 
-  deployEntity(files: ContentFile[], entityId: EntityId, auditInfo: LocalDeploymentAuditInfo): Promise<Timestamp> {
-    return Promise.resolve(Date.now())
-  }
-
-  deployToFix(files: ContentFile[], entityId: EntityId): Promise<Timestamp> {
-    return Promise.resolve(Date.now())
-  }
-
-  deployLocalLegacy(
-    files: ContentFile[],
-    entityId: string,
+  deployEntity(
+    files: Buffer[],
+    entityId: EntityId,
     auditInfo: LocalDeploymentAuditInfo,
-    task?: Database
-  ): Promise<number> {
-    throw new Error('Method not implemented.')
+    context: DeploymentContext
+  ): Promise<Timestamp> {
+    return Promise.resolve(Date.now())
   }
 
   isContentAvailable(fileHashes: ContentFileHash[]): Promise<Map<ContentFileHash, boolean>> {
@@ -181,6 +174,7 @@ export class MockedMetaverseContentService implements MetaverseContentService {
   private entityToDeployment(entity: Entity): Deployment {
     return {
       ...entity,
+      entityVersion: EntityVersion.V3,
       entityType: entity.type,
       entityId: entity.id,
       entityTimestamp: entity.timestamp,
@@ -222,7 +216,7 @@ export class MockedMetaverseContentServiceBuilder {
 export function buildEntity(
   pointers: Pointer[],
   ...content: { hash: ContentFileHash; buffer: Buffer }[]
-): Promise<[Entity, ContentFile]> {
+): Promise<[Entity, Buffer]> {
   const entityContent: Map<string, ContentFileHash> = new Map(
     content.map((aContent) => [random.alphaNumeric(10), aContent.hash])
   )

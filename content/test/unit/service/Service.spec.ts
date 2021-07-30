@@ -1,4 +1,3 @@
-import { ContentFile } from '@katalyst/content/controller/Controller'
 import { Bean, Environment } from '@katalyst/content/Environment'
 import { ContentAuthenticator } from '@katalyst/content/service/auth/Authenticator'
 import { CacheManager } from '@katalyst/content/service/caching/CacheManager'
@@ -12,16 +11,16 @@ import {
   MetaverseContentService
 } from '@katalyst/content/service/Service'
 import { ServiceFactory } from '@katalyst/content/service/ServiceFactory'
-import { ContentStorage, StorageContent } from '@katalyst/content/storage/ContentStorage'
-import { assertPromiseRejectionIs } from '@katalyst/test-helpers/PromiseAssertions'
+import { ContentStorage } from '@katalyst/content/storage/ContentStorage'
 import { MockedRepository } from '@katalyst/test-helpers/repository/MockedRepository'
 import { MockedAccessChecker } from '@katalyst/test-helpers/service/access/MockedAccessChecker'
 import { buildEntityAndFile } from '@katalyst/test-helpers/service/EntityTestFactory'
 import { MockedContentCluster } from '@katalyst/test-helpers/service/synchronization/MockedContentCluster'
-import { NoOpValidations } from '@katalyst/test-helpers/service/validations/NoOpValidations'
+import { NoOpValidator } from '@katalyst/test-helpers/service/validations/NoOpValidator'
 import assert from 'assert'
-import { ContentFileHash, EntityType, EntityVersion, ENTITY_FILE_NAME, Hashing } from 'dcl-catalyst-commons'
+import { ContentFileHash, EntityType, EntityVersion, Hashing } from 'dcl-catalyst-commons'
 import { Authenticator } from 'dcl-crypto'
+import { mock } from 'ts-mockito'
 import { MockedStorage } from '../storage/MockedStorage'
 import { NoOpDeploymentManager } from './deployments/NoOpDeploymentManager'
 import { NoOpFailedDeploymentsManager } from './errors/NoOpFailedDeploymentsManager'
@@ -30,28 +29,27 @@ import { NoOpPointerManager } from './pointers/NoOpPointerManager'
 describe('Service', function () {
   const POINTERS = ['X1,Y1', 'X2,Y2']
   const auditInfo: LocalDeploymentAuditInfo = {
-    authChain: Authenticator.createSimpleAuthChain('entityId', 'ethAddress', 'signature'),
-    version: EntityVersion.V3
+    authChain: Authenticator.createSimpleAuthChain('entityId', 'ethAddress', 'signature')
   }
 
   const initialAmountOfDeployments: number = 15
 
-  let randomFile: { name: string; content: Buffer }
+  let randomFile: Buffer
   let randomFileHash: ContentFileHash
   let entity: Entity
-  let entityFile: ContentFile
+  let entityFile: Buffer
   let storage: ContentStorage
   let service: MetaverseContentService
   let pointerManager: PointerManager
 
   beforeAll(async () => {
-    randomFile = { name: 'file', content: Buffer.from('1234') }
-    randomFileHash = await Hashing.calculateHash(randomFile)
+    randomFile = Buffer.from('1234')
+    randomFileHash = await Hashing.calculateBufferHash(randomFile)
     ;[entity, entityFile] = await buildEntityAndFile(
       EntityType.SCENE,
       POINTERS,
       Date.now(),
-      new Map([[randomFile.name, randomFileHash]]),
+      new Map([['file', randomFileHash]]),
       'metadata'
     )
   })
@@ -62,19 +60,13 @@ describe('Service', function () {
     service = await buildService()
   })
 
-  it(`When no file called '${ENTITY_FILE_NAME}' is uploaded, then an exception is thrown`, async () => {
-    await assertPromiseRejectionIs(
-      () => service.deployEntity([randomFile], randomFileHash, auditInfo, ''),
-      `Failed to find the entity file. Please make sure that it is named '${ENTITY_FILE_NAME}'.`
-    )
-  })
-
-  it(`When two or more files called '${ENTITY_FILE_NAME}' are uploaded, then an exception is thrown`, async () => {
-    const invalidEntityFile: ContentFile = { name: ENTITY_FILE_NAME, content: Buffer.from('Hello') }
-    await assertPromiseRejectionIs(
-      () => service.deployEntity([entityFile, invalidEntityFile], 'some-id', auditInfo, ''),
-      `Found more than one file called '${ENTITY_FILE_NAME}'. Please make sure you upload only one with that name.`
-    )
+  it(`When no file matches the given entity id, then deployment fails`, async () => {
+    const deploymentResult = await service.deployEntity([randomFile], 'not-actual-hash', auditInfo)
+    if (isInvalidDeployment(deploymentResult)) {
+      expect(deploymentResult.errors).toEqual([`Failed to find the entity file.`])
+    } else {
+      assert.fail('Expected the deployment to fail')
+    }
   })
 
   it(`When an entity is successfully deployed, then the content is stored correctly`, async () => {
@@ -83,8 +75,7 @@ describe('Service', function () {
     const deploymentResult: DeploymentResult = await service.deployEntity(
       [entityFile, randomFile],
       entity.id,
-      auditInfo,
-      ''
+      auditInfo
     )
     if (isInvalidDeployment(deploymentResult)) {
       assert.fail(
@@ -94,8 +85,8 @@ describe('Service', function () {
       const deltaMilliseconds = Date.now() - deploymentResult
       expect(deltaMilliseconds).toBeGreaterThanOrEqual(0)
       expect(deltaMilliseconds).toBeLessThanOrEqual(10)
-      expect(storageSpy).toHaveBeenCalledWith(entity.id, equalDataOnStorageContent(entityFile.content))
-      expect(storageSpy).toHaveBeenCalledWith(randomFileHash, equalDataOnStorageContent(randomFile.content))
+      expect(storageSpy).toHaveBeenCalledWith(entity.id, entityFile)
+      expect(storageSpy).toHaveBeenCalledWith(randomFileHash, randomFile)
     }
   })
 
@@ -106,10 +97,10 @@ describe('Service', function () {
     )
     const storeSpy = spyOn(storage, 'store')
 
-    await service.deployEntity([entityFile, randomFile], entity.id, auditInfo, '')
+    await service.deployEntity([entityFile, randomFile], entity.id, auditInfo)
 
-    expect(storeSpy).toHaveBeenCalledWith(entity.id, equalDataOnStorageContent(entityFile.content))
-    expect(storeSpy).not.toHaveBeenCalledWith(randomFileHash, equalDataOnStorageContent(randomFile.content))
+    expect(storeSpy).toHaveBeenCalledWith(entity.id, entityFile)
+    expect(storeSpy).not.toHaveBeenCalledWith(randomFileHash, randomFile)
   })
 
   it(`When the service is started, then the amount of deployments is obtained from the repository`, async () => {
@@ -122,7 +113,7 @@ describe('Service', function () {
 
   it(`When a new deployment is made, then the amount of deployments is increased`, async () => {
     await service.start()
-    await service.deployEntity([entityFile, randomFile], entity.id, auditInfo, '')
+    await service.deployEntity([entityFile, randomFile], entity.id, auditInfo)
 
     const status = service.getStatus()
 
@@ -132,7 +123,7 @@ describe('Service', function () {
   it(`When a new deployment is made and fails, then the amount of deployments is not modified`, async () => {
     await service.start()
     try {
-      await service.deployEntity([randomFile], randomFileHash, auditInfo, '')
+      await service.deployEntity([randomFile], randomFileHash, auditInfo)
     } catch {}
 
     const status = service.getStatus()
@@ -181,7 +172,7 @@ describe('Service', function () {
     expectSpyToBeCalled(serviceSpy, POINTERS)
 
     // Make deployment that should invalidate the cache
-    await service.deployEntity([entityFile, randomFile], entity.id, auditInfo, '')
+    await service.deployEntity([entityFile, randomFile], entity.id, auditInfo)
 
     // Reset spy and call again
     serviceSpy.calls.reset()
@@ -193,8 +184,8 @@ describe('Service', function () {
     const env = new Environment()
       .registerBean(Bean.STORAGE, storage)
       .registerBean(Bean.ACCESS_CHECKER, new MockedAccessChecker())
-      .registerBean(Bean.AUTHENTICATOR, new ContentAuthenticator())
-      .registerBean(Bean.VALIDATIONS, new NoOpValidations())
+      .registerBean(Bean.AUTHENTICATOR, mock<ContentAuthenticator>())
+      .registerBean(Bean.VALIDATOR, new NoOpValidator())
       .registerBean(Bean.CONTENT_CLUSTER, MockedContentCluster.withoutIdentity())
       .registerBean(Bean.FAILED_DEPLOYMENTS_MANAGER, NoOpFailedDeploymentsManager.build())
       .registerBean(Bean.POINTER_MANAGER, pointerManager)
@@ -202,17 +193,6 @@ describe('Service', function () {
       .registerBean(Bean.REPOSITORY, MockedRepository.build(new Map([[EntityType.SCENE, initialAmountOfDeployments]])))
       .registerBean(Bean.CACHE_MANAGER, new CacheManager())
     return ServiceFactory.create(env)
-  }
-
-  function equalDataOnStorageContent(data: Buffer): jasmine.AsymmetricMatcher<StorageContent> {
-    return {
-      asymmetricMatch: function (compareTo) {
-        return compareTo.data === data
-      },
-      jasmineToString: function () {
-        return `<StorageContent with Data: ${data}>`
-      }
-    }
   }
 
   function expectSpyToBeCalled(serviceSpy: jasmine.Spy, pointers: string[]) {
@@ -226,6 +206,7 @@ describe('Service', function () {
 
   function fakeDeployment(): Deployment {
     return {
+      entityVersion: EntityVersion.V3,
       entityType: EntityType.SCENE,
       entityId: '',
       entityTimestamp: 10,
@@ -233,6 +214,7 @@ describe('Service', function () {
       pointers: POINTERS,
       auditInfo: {
         ...auditInfo,
+        version: EntityVersion.V3,
         localTimestamp: 10
       }
     }

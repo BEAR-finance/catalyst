@@ -1,8 +1,11 @@
 import {
+  BuildEntityOptions,
+  BuildEntityWithoutFilesOptions,
   ContentAPI,
   ContentClient,
   DeploymentData,
   DeploymentOptions,
+  DeploymentPreparationData,
   DeploymentWithMetadataContentAndPointers
 } from 'dcl-catalyst-client'
 import {
@@ -27,14 +30,13 @@ import { Readable } from 'stream'
  * This content client  tries to use the internal docker network to connect lambdas with the content server.
  * If it can't, then it will try to contact it externally
  */
-
 export class SmartContentClient implements ContentAPI {
   private static INTERNAL_CONTENT_SERVER_URL: string = `http://content-server:6969`
   private static LOGGER = log4js.getLogger('SmartContentClient')
 
   private contentClient: IFuture<ContentAPI> | undefined
 
-  constructor(private readonly externalContentServerUrl: string) {}
+  constructor(private readonly externalContentServerUrl: string, private readonly proofOfWorkEnabled: boolean) {}
 
   async fetchEntitiesByPointers(type: EntityType, pointers: Pointer[], options?: RequestOptions): Promise<Entity[]> {
     const client = await this.getClient()
@@ -99,6 +101,18 @@ export class SmartContentClient implements ContentAPI {
     throw new Error('New deployments are currently not supported')
   }
 
+  buildEntity({ type, pointers, files, metadata }: BuildEntityOptions): Promise<DeploymentPreparationData> {
+    throw new Error('New deployments are currently not supported')
+  }
+  buildEntityWithoutNewFiles({
+    type,
+    pointers,
+    hashesByKey,
+    metadata
+  }: BuildEntityWithoutFilesOptions): Promise<DeploymentPreparationData> {
+    throw new Error('New deployments are currently not supported')
+  }
+
   getContentUrl(): string {
     throw new Error('Get content url is currently not supported')
   }
@@ -125,9 +139,14 @@ export class SmartContentClient implements ContentAPI {
         SmartContentClient.LOGGER.info('Will use the internal content server url')
         contentClientUrl = SmartContentClient.INTERNAL_CONTENT_SERVER_URL
       } catch {
-        SmartContentClient.LOGGER.info('Defaulting to external content server url')
+        SmartContentClient.LOGGER.info('Defaulting to external content server url: ', contentClientUrl)
       }
-      this.contentClient.resolve(new ContentClient(contentClientUrl, 'lambdas'))
+      this.contentClient.resolve(
+        new ContentClient({
+          contentUrl: contentClientUrl,
+          proofOfWorkEnabled: contentClientUrl === this.externalContentServerUrl && this.proofOfWorkEnabled
+        })
+      )
     }
     return this.contentClient
   }

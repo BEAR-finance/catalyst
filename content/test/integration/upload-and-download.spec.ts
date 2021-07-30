@@ -1,10 +1,10 @@
-import { ContentFile } from '@katalyst/content/controller/Controller'
 import { Bean } from '@katalyst/content/Environment'
 import { MockedSynchronizationManager } from '@katalyst/test-helpers/service/synchronization/MockedSynchronizationManager'
+import { DeploymentData } from 'dcl-catalyst-client'
 import { Entity as ControllerEntity, EntityType } from 'dcl-catalyst-commons'
 import { assertDeploymentFailsWith, assertDeploymentsAreReported, buildDeployment } from './E2EAssertions'
 import { loadStandaloneTestEnvironment } from './E2ETestEnvironment'
-import { buildDeployData, DeployData } from './E2ETestUtils'
+import { buildDeployData } from './E2ETestUtils'
 import { TestServer } from './TestServer'
 
 describe('End 2 end deploy test', () => {
@@ -68,7 +68,7 @@ describe('End 2 end deploy test', () => {
     await assertDeploymentsAreReported(server, deployment)
   })
 
-  async function validateReceivedData(receivedScenes: ControllerEntity[], deployData: DeployData) {
+  async function validateReceivedData(receivedScenes: ControllerEntity[], deployData: DeploymentData) {
     expect(receivedScenes.length).toBe(1)
     const scene: ControllerEntity = receivedScenes[0]
     expect(scene.id).toBe(deployData.entityId)
@@ -80,26 +80,14 @@ describe('End 2 end deploy test', () => {
 
     expect(scene.content).toBeDefined()
     expect(scene.content!.length).toBe(2)
-    expect(findInArray(scene.content, Array.from(deployData.files.values())[0].name)).toBeDefined()
-    expect(findInArray(scene.content, Array.from(deployData.files.values())[1].name)).toBeDefined()
 
     for (const contentElement of scene.content!) {
       const downloadedContent = await server.downloadContent(contentElement.hash)
-      expect(downloadedContent).toEqual(
-        findInFileArray(Array.from(deployData.files.values()), contentElement.file)?.content ?? Buffer.from([])
-      )
+      expect(downloadedContent).toEqual(deployData.files.get(contentElement.hash)!)
     }
   }
 })
 
 function equalsCaseInsensitive(text1: string, text2: string): boolean {
   return text1.toLowerCase() === text2.toLowerCase()
-}
-
-function findInArray<T extends { file: string }>(elements: T[] | undefined, key: string): T | undefined {
-  return elements?.find((e) => e.file === key)
-}
-
-function findInFileArray(elements: ContentFile[] | undefined, key: string): ContentFile | undefined {
-  return elements?.find((e) => e.name === key)
 }

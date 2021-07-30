@@ -1,20 +1,11 @@
-import { ContentFile } from '@katalyst/content/controller/Controller'
 import { ControllerEntityFactory } from '@katalyst/content/controller/ControllerEntityFactory'
 import { retry } from '@katalyst/content/helpers/RetryHelper'
 import { Entity } from '@katalyst/content/service/Entity'
 import { EntityFactory } from '@katalyst/content/service/EntityFactory'
 import { DeploymentResult, MetaverseContentService } from '@katalyst/content/service/Service'
-import { DeploymentBuilder } from 'dcl-catalyst-client'
-import {
-  ContentFileHash,
-  Entity as ControllerEntity,
-  EntityId,
-  EntityType,
-  EntityVersion,
-  Pointer,
-  Timestamp
-} from 'dcl-catalyst-commons'
-import { AuthChain, Authenticator, EthAddress } from 'dcl-crypto'
+import { DeploymentBuilder, DeploymentData } from 'dcl-catalyst-client'
+import { Entity as ControllerEntity, EntityType, EntityVersion, Pointer, Timestamp } from 'dcl-catalyst-commons'
+import { Authenticator, EthAddress } from 'dcl-crypto'
 import EthCrypto from 'eth-crypto'
 import fs from 'fs'
 import path from 'path'
@@ -33,6 +24,7 @@ export async function buildDeployDataAfterEntity(
 export async function buildDeployData(pointers: Pointer[], options?: DeploymentOptions): Promise<EntityCombo> {
   const opts = Object.assign(
     {
+      version: EntityVersion.V3,
       type: EntityType.SCENE,
       timestamp: Date.now(),
       metadata: 'metadata',
@@ -46,13 +38,11 @@ export async function buildDeployData(pointers: Pointer[], options?: DeploymentO
       ? new Map(opts.contentPaths.map((filePath) => [path.basename(filePath), fs.readFileSync(filePath)]))
       : undefined
 
-  const deploymentPreparationData = await DeploymentBuilder.buildEntity(
-    opts.type,
+  const deploymentPreparationData = await DeploymentBuilder.buildEntity({
+    ...opts,
     pointers,
-    buffers,
-    opts.metadata,
-    opts.timestamp
-  )
+    files: buffers
+  })
   const [, signature] = hashAndSignMessage(deploymentPreparationData.entityId, opts.identity)
   const authChain = Authenticator.createSimpleAuthChain(
     deploymentPreparationData.entityId,
@@ -60,7 +50,7 @@ export async function buildDeployData(pointers: Pointer[], options?: DeploymentO
     signature
   )
 
-  const entity: Entity = EntityFactory.fromFile(
+  const entity: Entity = EntityFactory.fromBufferWithId(
     deploymentPreparationData.files.get(deploymentPreparationData.entityId)!,
     deploymentPreparationData.entityId
   )
@@ -69,7 +59,7 @@ export async function buildDeployData(pointers: Pointer[], options?: DeploymentO
     delete entity.content
   }
 
-  const deployData: DeployData = {
+  const deployData: DeploymentData = {
     entityId: entity.id,
     authChain: authChain,
     files: deploymentPreparationData.files
@@ -125,20 +115,11 @@ export async function deployEntitiesCombo(
 ): Promise<DeploymentResult> {
   let deploymentResult: DeploymentResult = { errors: [] }
   for (const { deployData } of entitiesCombo) {
-    deploymentResult = await service.deployEntity(
-      Array.from(deployData.files.values()),
-      deployData.entityId,
-      { authChain: deployData.authChain, version: EntityVersion.V2 },
-      ''
-    )
+    deploymentResult = await service.deployEntity(Array.from(deployData.files.values()), deployData.entityId, {
+      authChain: deployData.authChain
+    })
   }
   return deploymentResult
-}
-
-export type DeployData = {
-  entityId: EntityId
-  authChain: AuthChain
-  files: Map<ContentFileHash, ContentFile>
 }
 
 export type Identity = {
@@ -155,7 +136,7 @@ type DeploymentOptions = {
 }
 
 export type EntityCombo = {
-  deployData: DeployData
+  deployData: DeploymentData
   controllerEntity: ControllerEntity
   entity: Entity
 }
