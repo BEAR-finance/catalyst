@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-import React, { useState, useEffect } from 'react'
-import { Field, Button } from 'decentraland-ui'
-
-import { IPeer } from '../../peer/src/types'
-import { PeerToken } from './PeerToken'
+import { Button, Field } from 'decentraland-ui'
+import React, { useEffect, useState } from 'react'
+import { discretizedPositionDistance } from '../../../commons/utils/Positions'
 import { Peer } from '../../peer/src'
 import { util } from '../../peer/src/peerjs-server-connector/util'
+import { IPeer } from '../../peer/src/types'
 import { mouse } from './Mouse'
-import { discretizedPositionDistance } from '../../../commons/utils/Positions'
+import { PeerToken } from './PeerToken'
+
 
 function fieldFor(label: string, value: string, setter: (s: string) => any) {
   return <Field label={label} onChange={(ev) => setter(ev.target.value)} value={value} />
@@ -20,26 +20,26 @@ declare const window: Window & { peer: Peer }
 export function ConnectForm(props: {
   onConnected: (peer: IPeer, layer: string, room: string, url: string) => any
   peerClass: {
-    new (url: string, peerId: string, callback: any, config: any): IPeer
+    new(url: string, peerId: string, callback: any, config: any): IPeer
   }
 }) {
-  const [nickname, setNickname] = useState('')
-  const [room, setRoom] = useState('')
-  const [isLoading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  var [nickname, setNickname] = useState('')
+  var [room, setRoom] = useState('')
+  var [isLoading, setLoading] = useState(false)
+  var [error, setError] = useState('')
 
-  const searchParams = new URLSearchParams(window.location.search)
-  const [url, setUrl] = useState(searchParams.get('lighthouseUrl') ?? 'http://localhost:9000')
+  var searchParams = new URLSearchParams(window.location.search)
+  var [url, setUrl] = useState(searchParams.get('lighthouseUrl') ?? 'http://localhost:9000')
 
-  const queryRoom = searchParams.get('room')
-  const queryNickname = searchParams.get('nickname')
+  var queryRoom = searchParams.get('room')
+  var queryNickname = searchParams.get('nickname')
 
   async function joinRoom() {
     setError('')
     setLoading(true)
     try {
       //@ts-ignore
-      const peer = (window.peer = new props.peerClass(url, undefined, () => {}, {
+      const peer = (window.peer = new props.peerClass(url, undefined, () => { }, {
         token: PeerToken.getToken(nickname),
         positionConfig: {
           selfPosition: () => [mouse.x, mouse.y, 0],
